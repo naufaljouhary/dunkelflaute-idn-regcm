@@ -1,8 +1,17 @@
 """
 Topography Visualization Module
 Author: Naufal Jouhary
-Description: Generates a high-resolution topographic map of the Indonesian archipelago
+
+Description:
+Generates a high-resolution topographic map of the Indonesian archipelago
 using DEM data. Includes hillshading and custom ocean masking for publication-quality output.
+
+Data Source & Preprocessing:
+- Original global DEM dataset (GMTED_DEM_30s.nc) downloaded from ICTP RegCM4 Data Portal.
+- Direct link: http://clima-dods.ictp.it/regcm4/minimal/SURFACE/GMTED_DEM_30s.nc
+- DOI: https://doi.org/10.5281/zenodo.181515678
+- Note: The global dataset was pre-processed and subsetted to the Indonesian maritime continent 
+  domain (GMTED_DEM_indo.nc) prior to running this script to optimize memory and computational efficiency.
 """
 
 import os
@@ -75,8 +84,8 @@ def generate_topography_map(input_filepath, output_filepath, lon_range=(94, 142)
     ax.imshow(rgba_img, extent=img_extent, transform=ccrs.PlateCarree(), origin='lower', zorder=1)
 
     # Add cartographic features (coastlines, borders, gridlines)
-    ax.add_feature(cfeature.COASTLINE, linewidth=0.6, color='black', zorder=2)
-    ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.6, color='black', zorder=2)
+    ax.add_feature(cfeature.COASTLINE, linewidth=0.6, edgecolor='black', facecolor='none', zorder=2)
+    ax.add_feature(cfeature.BORDERS, linestyle=':', linewidth=0.6, edgecolor='black', facecolor='none', zorder=2)
     
     gl = ax.gridlines(draw_labels=True, linestyle='--', alpha=0.3, color='gray', zorder=3)
     gl.top_labels = True
