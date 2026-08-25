@@ -29,8 +29,7 @@ To maintain strict reproducibility, the pipeline is modularized as follows:
 ├── data/
 │   ├── raw/                                # CMIP6 and ERA5 reference data (Not tracked via Git)
 │   ├── processed/                          # Bias-corrected intermediate datasets (Not tracked via Git)
-│   └── outputs/                            # Generated spatial maps, figures, and Bappenas summary tables
-│       └── tables/                         # Regional tabular extractions (.xlsx)
+│   └── outputs/                            # Generated spatial maps, and figures
 ├── notebooks/
 │   ├── 01_gcm_evaluation.ipynb             # Taylor Diagrams and TSS spatial validation
 │   ├── 02_bias_correction.ipynb            # Spatial absolute/bias matrices and CDF validation
