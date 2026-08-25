@@ -1,9 +1,9 @@
 """
-Project: Sovereign Energy Drought Extractor (Mean, Max, EDF & Trend Edition)
+Project: Energy Drought Extraction Engine
 Description: 
-- Menghitung EDF & EDD (Mean & Max) secara tahunan dengan Pooling Qu et al.
-- Mendukung 3 Pilar: Wind, Solar 24H, dan Solar Daylight (Siang).
-- ⚡ NEW: Continuous 60-Year Theil-Sen Trend Analysis untuk semua metrik kekeringan.
+- Extracts Energy Drought Frequency (EDF) and Duration (EDD).
+- Implements 1-day gap pooling methodology (Qu et al.) for consecutive drought events.
+- Performs continuous 60-year Theil-Sen trend analysis across Historical and SSP scenarios.
 """
 
 import xarray as xr
@@ -15,22 +15,23 @@ from scipy.stats import theilslopes, kendalltau
 
 warnings.filterwarnings("ignore")
 
-class AdvancedDroughtCalculator:
+class EnergyDroughtCalculator:
     def __init__(self):
-        self.cf_dir = "/mgpfs/home/njouhary/TESIS/4_capacity_factor/output/rrtm_ncld1"
-        self.out_dir = "/mgpfs/home/njouhary/TESIS/6_drought_analysis/rrtm_ncld1"
+        self.cf_dir = "../data/processed"
+        self.out_dir = "../data/processed"
         self.trend_dir = os.path.join(self.out_dir, "trends")
+        
         os.makedirs(self.out_dir, exist_ok=True)
         os.makedirs(self.trend_dir, exist_ok=True)
         
         self.models = ['EC-Earth3', 'NorESM']
         self.ssps = ['ssp126', 'ssp245', 'ssp370', 'ssp585']
         
-        # Tuple Config -> (Prefix, Suffix, Nama_Output_Akhir, Internal_Var_Name)
+        # Configuration: (Prefix, Suffix, Output_Name, Internal_Var_Name)
         self.vars_config = [
             ('CF_WIND', '', 'WIND', 'cf_wind'),
             ('CF_SOLAR', '', 'SOLAR', 'cf_solar'),
-            ('CF_SOLAR', '_siang', 'SOLAR_siang', 'cf_solar')
+            ('CF_SOLAR', '_siang', 'SOLAR_daylight', 'cf_solar')
         ]
         
     def get_ensemble_data(self, prefix, suffix, var_name, scen):
@@ -50,7 +51,7 @@ class AdvancedDroughtCalculator:
         edf = mask_10.resample(time='1Y').sum(dim='time')
         
         edf.name = f"{var_name}_EDF"
-        edf.attrs = {'long_name': f'Energy Drought Freq (CF < 0.1)', 'units': 'Days'}
+        edf.attrs = {'long_name': 'Energy Drought Freq (CF < 0.1)', 'units': 'Days'}
         return edf
 
     def extract_annual_edd_with_pooling(self, da_target, p20, p40, var_name):
@@ -58,7 +59,7 @@ class AdvancedDroughtCalculator:
         p20_vals = p20.values[np.newaxis, :, :]
         p40_vals = p40.values[np.newaxis, :, :]
         
-        # Buat empty array untuk nampung annual EDD
+        # Initialize arrays for annual EDD
         years = np.unique(da_target.time.dt.year)
         annual_max = np.zeros((len(years), da_target.shape[1], da_target.shape[2]))
         annual_mean = np.zeros((len(years), da_target.shape[1], da_target.shape[2]))
@@ -70,7 +71,7 @@ class AdvancedDroughtCalculator:
             m20 = cf_vals < p20_vals
             m40 = cf_vals < p40_vals
             
-            # MENDETEKSI GAP 1 HARI UNTUK POOLING (QU ET AL.)
+            # Detect 1-day gaps for pooling (Qu et al. methodology)
             m20_prev = np.roll(m20, shift=1, axis=0)
             m20_prev[0, :, :] = False  
             
@@ -131,27 +132,27 @@ class AdvancedDroughtCalculator:
 
     def run(self):
         print("==========================================================")
-        print("🏜️ TRINITY DROUGHT ENGINE: METRICS & CONTINUOUS TRENDS")
+        print("Initializing Energy Drought Extraction Engine")
         print("==========================================================")
         
         for prefix, suffix, out_name, var_name in self.vars_config:
-            print(f"\n[ MENGANALISIS PILAR: {out_name} ]")
+            print(f"\n[ Processing: {out_name} ]")
             
             # --- 1. HISTORICAL BASELINE & THRESHOLDS ---
             da_hist = self.get_ensemble_data(prefix, suffix, var_name, 'hist')
             if da_hist is None:
-                print(f"   ⏩ Data Historis {out_name} tidak lengkap. Skip.")
+                print(f"   [SKIP] Historical data for {out_name} is incomplete.")
                 continue
                 
-            print("   -> Menghitung Threshold Absolut Historis (P20 & P40)...")
+            print("   Calculating historical thresholds (P20 & P40)...")
             p20 = da_hist.quantile(0.20, dim='time').drop_vars('quantile')
             p40 = da_hist.quantile(0.40, dim='time').drop_vars('quantile')
             
-            print("   -> Mengekstrak EDF & EDD Tahunan (Historis)...")
+            print("   Extracting annual EDF & EDD (Historical)...")
             edf_hist = self.extract_annual_edf(da_hist, out_name)
             edd_max_hist, edd_mean_hist = self.extract_annual_edd_with_pooling(da_hist, p20, p40, out_name)
             
-            # Simpan Metrik Historis Rata-rata (Opsional, untuk komparasi statis)
+            # Save average historical metrics
             ds_hist_mean = xr.merge([edf_hist.mean('time'), edd_max_hist.mean('time'), edd_mean_hist.mean('time')])
             ds_hist_mean.to_netcdf(os.path.join(self.out_dir, f"Drought_Clim_{out_name}_hist.nc"))
 
@@ -160,16 +161,16 @@ class AdvancedDroughtCalculator:
                 da_ssp = self.get_ensemble_data(prefix, suffix, var_name, ssp)
                 if da_ssp is None: continue
                 
-                print(f"   -> Mengekstrak EDF & EDD Tahunan ({ssp.upper()})...")
+                print(f"   Extracting annual EDF & EDD ({ssp.upper()})...")
                 edf_ssp = self.extract_annual_edf(da_ssp, out_name)
                 edd_max_ssp, edd_mean_ssp = self.extract_annual_edd_with_pooling(da_ssp, p20, p40, out_name)
                 
-                # Simpan Metrik SSP Rata-rata
+                # Save average SSP metrics
                 ds_ssp_mean = xr.merge([edf_ssp.mean('time'), edd_max_ssp.mean('time'), edd_mean_ssp.mean('time')])
                 ds_ssp_mean.to_netcdf(os.path.join(self.out_dir, f"Drought_Clim_{out_name}_{ssp}.nc"))
 
-                # ⚡ KONTINU 60-TAHUN TREND (HIST + SSP) ⚡
-                print(f"   ⏳ Merakit Tren Kontinu 60 Tahun (HIST + {ssp.upper()})...")
+                # Continuous 60-Year Trend Analysis (HIST + SSP)
+                print(f"   Calculating continuous 60-year trends (HIST + {ssp.upper()})...")
                 
                 # EDF Trend
                 edf_60yr = xr.concat([edf_hist, edf_ssp], dim='time')
@@ -183,7 +184,7 @@ class AdvancedDroughtCalculator:
                 edd_mean_60yr = xr.concat([edd_mean_hist, edd_mean_ssp], dim='time')
                 slope_edd_mean, pval_edd_mean = self.apply_trend_to_da(edd_mean_60yr)
                 
-                # Rakit Dataset Trend Final
+                # Assemble final trend dataset
                 ds_trend = xr.Dataset({
                     f'{out_name}_EDF_slope': slope_edf, f'{out_name}_EDF_pval': pval_edf,
                     f'{out_name}_EDD_Max_slope': slope_edd_max, f'{out_name}_EDD_Max_pval': pval_edd_max,
@@ -192,7 +193,7 @@ class AdvancedDroughtCalculator:
                 
                 trend_file = os.path.join(self.trend_dir, f"TREND_60YR_Drought_{out_name}_{ssp}.nc")
                 ds_trend.to_netcdf(trend_file)
-                print(f"   ✅ Tren Tersimpan: {os.path.basename(trend_file)}")
+                print(f"   [SAVED] {os.path.basename(trend_file)}")
                 
                 del da_ssp, edf_ssp, edd_max_ssp, edd_mean_ssp, edf_60yr, edd_max_60yr, edd_mean_60yr, ds_trend
                 gc.collect()
@@ -200,7 +201,7 @@ class AdvancedDroughtCalculator:
             del da_hist, p20, p40, edf_hist, edd_max_hist, edd_mean_hist
             gc.collect()
 
-        print("\n🎉 ANALISIS KEKERINGAN & TREN SELESAI!")
+        print("\n[SUCCESS] Energy drought and trend analysis completed.")
 
 if __name__ == "__main__":
-    AdvancedDroughtCalculator().run()
+    EnergyDroughtCalculator().run()
