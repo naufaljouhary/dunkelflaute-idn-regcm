@@ -1,12 +1,11 @@
 """
-Project: Sovereign Bias Correction V42.5 (The Cannon Window) + Multi-Windowing
+Project: Bias Correction with Quantile Delta Mapping (QDM)
 Description: 
-- ⚡ THE CANNON FIX: Sliding Window 91-hari (dayofyear, window=91).
-- ⚡ MULTI-WINDOWING HACK: Otomatis memecah Future (36th) jadi Block A (24th) & Block B (24th) di RAM.
-- ⚡ MACROSCOPIC JITTER: Jittering khusus rsds (0.1-1.0).
-- ⚡ SURFACE PHYSICAL CAP: Memotong rsds max di 1200 W/m2.
-- ⚡ TRUE RESUME FILTER: Hanya memproses skenario yang file output finalnya belum ada.
-- Mempertahankan semua stabilitas RAM (Tiling 30x30, GC, Anti-int16).
+- Implements a 91-day sliding window.
+- Automatically splits future projections (36 years) into Block A (24 years) & Block B (24 years) to match historical length.
+- Applies macroscopic jittering for rsds (0.1-1.0) and a physical cap at 1200 W/m2.
+- Includes a resume filter to skip existing outputs.
+- Memory optimization via spatial tiling (30x30) and garbage collection.
 """
 
 import xarray as xr
@@ -24,8 +23,8 @@ def get_config():
     parser = argparse.ArgumentParser()
     parser.add_argument('target_type', type=str)
     parser.add_argument('model_name', type=str)
-    parser.add_argument('--in_dir', default=os.getenv('INPUT_DIR', "/mgpfs/home/njouhary/TESIS/3_bias_correction/input/rrtm_ncld1"))
-    parser.add_argument('--out_dir', default=os.getenv('OUTPUT_DIR', "/mgpfs/home/njouhary/TESIS/3_bias_correction/output/rrtm_ncld1"))
+    parser.add_argument('--in_dir', default=os.getenv('INPUT_DIR', "../data/raw"))
+    parser.add_argument('--out_dir', default=os.getenv('OUTPUT_DIR', "../data/processed"))
     return parser.parse_args()
 
 def fix_metadata(ds):
@@ -46,12 +45,14 @@ def fix_metadata(ds):
     ds = ds.drop_vars(drop, errors='ignore')
     return ds.squeeze()
 
-class SurgicalBiasCorrection:
+class BiasCorrectionQDM:
     def __init__(self, args):
         self.target_type, self.model_name = args.target_type, args.model_name
         self.in_dir, self.out_dir = args.in_dir, args.out_dir
         self.tmp_dir = os.path.join(self.out_dir, f"tmp_{self.target_type}_{self.model_name}")
-        os.makedirs(self.out_dir, exist_ok=True); os.makedirs(self.tmp_dir, exist_ok=True)
+        os.makedirs(self.out_dir, exist_ok=True)
+        os.makedirs(self.tmp_dir, exist_ok=True)
+        
         self.var_map = {
             'ws10':  {'comps': ['uas', 'vas'], 'unit': 'm/s'},
             'ws100': {'comps': ['ua100m', 'va100m'], 'unit': 'm/s'},
@@ -60,7 +61,7 @@ class SurgicalBiasCorrection:
         }
         self.scenarios = ['hist', 'ssp126', 'ssp245', 'ssp370', 'ssp585']
 
-    def apply_academic_jitter(self, da):
+    def apply_jitter(self, da):
         if self.target_type == 'rsds':
             threshold = 1.0 
             noise = xr.DataArray(
@@ -103,58 +104,60 @@ class SurgicalBiasCorrection:
     def get_data(self, components, model_filter):
         das = [self.robust_load(c, model_filter) for c in components]
         if any(d is None for d in das): return None
+        
         if len(das) == 2:
             res = np.sqrt(das[0]**2 + das[1]**2)
             res.encoding.clear()
             res.attrs['units'] = self.var_map[self.target_type]['unit']
             res.name = self.target_type
             return res
+            
         return das[0]
 
     def process(self):
-        print(f"🌩️ QDM V42.5 (MULTI-WINDOWING HACK) READY | {self.target_type} | {self.model_name}")
+        print(f"Initializing QDM | Target: {self.target_type} | Model: {self.model_name}")
         
-        # ⚡ THE TRUE RESUME FIX: FILTERING & SLICING DI GERBANG DEPAN ⚡
+        # Input filtering and slicing
         da_targets = {}
         for s in self.scenarios:
             data_scen = self.get_data(self.var_map[self.target_type]['comps'], f"{self.model_name}_{s}")
             if data_scen is None:
-                print(f"⚠️ [WARNING] Input {s.upper()} gaib/belum lengkap. Di-skip.")
+                print(f"[WARNING] Input {s.upper()} is missing or incomplete. Skipping.")
                 continue
                 
             if s == 'hist':
                 final_out_path = os.path.join(self.out_dir, f"{self.target_type}_{self.model_name}_{s}_corrected.nc")
                 if os.path.exists(final_out_path):
-                    print(f"✅ [SKIP] Skenario {s.upper()} sudah ada file finalnya. Aman!")
+                    print(f"[SKIP] Final output for {s.upper()} already exists.")
                 else:
                     da_targets[s] = data_scen
             else:
-                # ⚡ OTOMATIS PECAH FUTURE (36 THN) JADI 2 BLOK (24 THN) DI MEMORI ⚡
+                # Split future projections into two blocks to match historical length
                 out_A = os.path.join(self.out_dir, f"{self.target_type}_{self.model_name}_{s}_blockA_corrected.nc")
                 out_B = os.path.join(self.out_dir, f"{self.target_type}_{self.model_name}_{s}_blockB_corrected.nc")
                 
                 if os.path.exists(out_A):
-                    print(f"✅ [SKIP] {s.upper()} Block A (2015-2038) sudah beres.")
+                    print(f"[SKIP] {s.upper()} Block A (2015-2038) already processed.")
                 else:
                     da_targets[f"{s}_blockA"] = data_scen.sel(time=slice('2015-01-01', '2038-12-31'))
                     
                 if os.path.exists(out_B):
-                    print(f"✅ [SKIP] {s.upper()} Block B (2027-2050) sudah beres.")
+                    print(f"[SKIP] {s.upper()} Block B (2027-2050) already processed.")
                 else:
                     da_targets[f"{s}_blockB"] = data_scen.sel(time=slice('2027-01-01', '2050-12-31'))
 
         if not da_targets:
-            print("🎉 [ALL DONE / NO ACTION] Semua blok sudah selesai. Cabut!")
+            print("[DONE] All blocks processed successfully.")
             return
             
-        print(f"🚀 Blok yang AKAN DI-ADJUST kali ini: {list(da_targets.keys())}")
+        print(f"Blocks scheduled for adjustment: {list(da_targets.keys())}")
 
-        # ⚡ LOAD TRAINING DATA (HISTORICAL BASELINE) ⚡
+        # Load training data (Historical baseline)
         da_ref = self.get_data(self.var_map[self.target_type]['comps'], 'ERA5_hist')
         da_mod_hist = self.get_data(self.var_map[self.target_type]['comps'], f"{self.model_name}_hist")
         
         if da_ref is None or da_mod_hist is None:
-            print("❌ [FATAL ERROR] Data ERA5_hist atau GCM_hist hilang! QDM nggak bisa di-train.")
+            print("[FATAL ERROR] Missing ERA5_hist or GCM_hist data. Cannot train QDM.")
             return
         
         da_ref = da_ref.isel(time=slice(0, len(da_mod_hist.time)))
@@ -185,8 +188,8 @@ class SurgicalBiasCorrection:
                     continue
 
                 if kind == '*':
-                    ref_t = self.apply_academic_jitter(ref_t)
-                    mod_h_t = self.apply_academic_jitter(mod_h_t)
+                    ref_t = self.apply_jitter(ref_t)
+                    mod_h_t = self.apply_jitter(mod_h_t)
 
                 qdm = QuantileDeltaMapping.train(
                     ref_t, 
@@ -198,7 +201,7 @@ class SurgicalBiasCorrection:
                 
                 for s in da_targets.keys():
                     mod_f_t = da_targets[s][:, y:y_e, x:x_e].load()
-                    if kind == '*': mod_f_t = self.apply_academic_jitter(mod_f_t)
+                    if kind == '*': mod_f_t = self.apply_jitter(mod_f_t)
                         
                     adj = qdm.adjust(mod_f_t).transpose('time', 'lat', 'lon')
                     adj.name = self.target_type
@@ -209,7 +212,7 @@ class SurgicalBiasCorrection:
                 del ref_t, mod_h_t, qdm
                 gc.collect() 
         
-        print("--> Assembly Phase: Merakit data final untuk blok yang tersisa...")
+        print("--> Assembly Phase: Reconstructing final dataset...")
         for s in da_targets.keys():
             da_final = xr.full_like(da_targets[s], np.nan, dtype=np.float32).load()
             for y in range(0, lat_len, tile_size):
@@ -234,6 +237,7 @@ class SurgicalBiasCorrection:
             out_path = os.path.join(self.out_dir, f"{self.target_type}_{self.model_name}_{s}_corrected.nc")
             if os.path.exists(out_path): os.remove(out_path)
             da_final.to_netcdf(out_path)
-            print(f"✅ ASSEMBLED SUCCESS: {out_path}")
+            print(f"[SUCCESS] Assembled output saved to: {out_path}")
 
-if __name__ == "__main__": SurgicalBiasCorrection(get_config()).process()
+if __name__ == "__main__": 
+    BiasCorrectionQDM(get_config()).process()
