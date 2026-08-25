@@ -1,0 +1,135 @@
+! MASTER TEMPLATE FOR DYNAMICAL DOWNSCALING
+! For SSP1-2.6, SSP2-4.5, SSP3-7.0, and SSP5-8.5 scenarios, the parameters 'cmip6_experiment' and 'gdate' were modified accordingly.
+
+&coreparam
+idynamic = 3,
+/
+&dimparam
+ iy = 111,	 
+ jx = 267,	
+ kz = 14,
+ nsg = 1,
+/
+&geoparam
+ iproj = 'NORMER',
+ ds = 25,
+ clat = -2.5,
+ clon = 120,
+ i_band = 0,
+/
+&terrainparam
+ domname = 'EC-Earth3_hist',
+ lakedpth = .false.,
+ fudge_lnd = .false.,
+ dirter = '/mgpfs/home/njouhary/TESIS/2_RegCM5/input/nest1/historical',
+ inpter = '/mgpfs/data/project0002/REGDIR',
+ tersrc = 'GMTED',
+ smsrc  = 'ESACCI',
+/
+&globdatparam
+ ibdyfrq = 6,
+ ssttyp = 'CMIP6',
+ dattyp = 'CMIP6',
+ gdate1 = 1991010100,
+ gdate2 = 2015010100,
+ calendar = 'gregorian',
+ dirglob = '/mgpfs/home/njouhary/TESIS/2_RegCM5/input/nest1/historical',
+ inpglob = '/mgpfs/data/project0002/REGDIR',
+ /
+&cmip6param
+ cmip6_model = 'EC-Earth3-Veg',
+ cmip6_inp = '/mgpfs/data/project0002/REGDIR',
+ cmip6_experiment = 'historical',
+ cmip6_variant = 'r1i1p1f1',
+ cmip6_grid = 'gr'
+ /
+&restartparam
+ ifrest = .true.,
+ mdate0 = 1991010100,
+ mdate1 = 2008070100,
+ mdate2 = 2015010100,
+/
+&timeparam
+ dt      = 180.,
+ dtrad   = 24.,
+ dtabem  = 0.,
+ dtsrf   = 720.,
+ dtcum   = 360.,
+ dtche   = 0.,
+/
+&outparam
+ ifsave = .true.,
+ savfrq = 0.,
+ ifatm = .true.,
+ atmfrq = 6.,
+ ifrad = .true.,
+ radfrq = 6.,
+ ifsrf = .true.,
+ srffrq = 6.,
+ ifsub = .true.,
+ ifchem = .false.,
+ chemfrq = 6.,
+ dirout = '/mgpfs/home/njouhary/TESIS/2_RegCM5/output/nest1/historical/RRTM_ncld1',
+/
+&physicsparam
+ ibltyp  = 2,
+ iboudy  = 5,
+ isladvec = 0,
+ iqmsl = 1,
+ icup_lnd = 5, 
+ icup_ocn = 5,
+ ipgf = 0,
+ iemiss = 0,
+ lakemod = 0,
+ ipptls  = 1,
+ idiffu   = 1, 
+ iocnflx = 2,
+ iocncpl = 0,
+ iwavcpl = 0,
+ icopcpl = 0,
+ iocnrough = 1, 
+ iocnzoq = 1,
+ ichem   = 0,
+ scenario ='HIST',
+ idcsst   = 0,
+ iseaice  = 0,
+ iconvlwp = 1,
+ icldmstrat = 1,
+ icldfrac = 0,
+ irrtm    = 1,
+ iclimao3 = 0,
+ iclimaaer = 0,
+ isolconst = 0,
+ icumcloud = 1,
+ islab_ocean = 0, 
+ itweak = 0,
+ ghg_year_const = 1991,
+ ifixsolar = 0, 
+ fixedsolarval =343.,
+ /
+ &cldparam
+ ncld = 1,
+ cftotmax = 1.0,
+ clfrcvmax = 1.0,
+ /
+ &clm_inparm
+ fpftcon = 'pft-physiology.c130503.nc',
+ fsnowoptics = 'snicar_optics_5bnd_c090915.nc',
+ fsnowaging = 'snicar_drdt_bst_fit_60_c070416.nc',
+ urban_hac = 'OFF', ! Valid values: OFF, ON, ON_WASTEHEAT
+ urban_traffic = .false.,
+ /
+ &clm_soilhydrology_inparm
+ h2osfcflag = 1,
+ origflag = 0,
+ /
+ &clm_hydrology1_inparm
+ oldfflag = 0,
+ /
+ &clm_regcm
+ enable_megan_emission = .false.,
+ enable_urban_landunit = .true.,
+ enable_more_crop_pft = .false.,
+ enable_dv_baresoil = .false.,
+ enable_cru_precip = .false.,
+ /
