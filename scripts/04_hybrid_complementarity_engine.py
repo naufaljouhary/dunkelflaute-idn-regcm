@@ -1,7 +1,8 @@
 """
-Project: Sovereign Complementarity Calculator (HPC Worker)
-Description: Menghitung SRCC & CVI lalu menyimpan ke NetCDF di folder Bab 5
-Update: ⚡ DUAL-MODE COMPLEMENTARITY: Menghitung 2 pasang pilar (Wind vs Solar 24H) & (Wind vs Solar Siang).
+Project: Hybrid Complementarity Engine
+Description: 
+- Calculates Spearman's Rank Correlation Coefficient (SRCC) and Composite Variability Index (CVI).
+- Evaluates complementarity for both standard 24-hour solar PV and daylight-only solar PV against wind power.
 """
 
 import xarray as xr
@@ -15,17 +16,17 @@ warnings.filterwarnings("ignore")
 
 class ComplementarityCalculator:
     def __init__(self):
-        self.cf_dir = "/mgpfs/home/njouhary/TESIS/4_capacity_factor/output/rrtm_ncld1"
-        self.out_dir = "/mgpfs/home/njouhary/TESIS/5_complementarity_analysis/rrtm_ncld1"
+        self.cf_dir = "../data/processed"
+        self.out_dir = "../data/processed"
         os.makedirs(self.out_dir, exist_ok=True)
         
         self.models = ['EC-Earth3', 'NorESM']
         self.scenarios = ['hist', 'ssp126', 'ssp245', 'ssp370', 'ssp585']
         
-        # ⚡ THE MENTOR'S TWEAK: Tuple Configuration (Solar_Suffix, Output_Modifier, Display_Name) ⚡
+        # Configuration: (Solar_Suffix, Output_Modifier, Display_Name)
         self.solar_configs = [
-            ('', '', 'SOLAR 24H'),                 # Wind vs Solar Standar
-            ('_siang', '_siang', 'SOLAR DAYLIGHT') # Wind vs Solar Siang
+            ('', '', 'SOLAR 24H'),                 # Wind vs Standard Solar
+            ('_siang', '_siang', 'SOLAR DAYLIGHT') # Wind vs Daylight Solar
         ]
 
     def calculate_srcc(self, da_wind, da_solar):
@@ -48,23 +49,21 @@ class ComplementarityCalculator:
 
     def run(self):
         print("==========================================================")
-        print("⚙️ STARTING COMPLEMENTARITY CALCULATION (OUTPUT: BAB 5)")
+        print("Initializing Complementarity Calculation")
         print("==========================================================")
         
         for sol_suffix, out_mod, display_name in self.solar_configs:
             print(f"\n==========================================================")
-            print(f"🔄 PILAR KOMPLEMENTARITAS: WIND VS {display_name}")
+            print(f"Evaluating Complementarity: WIND VS {display_name}")
             print("==========================================================")
             
             for scen in self.scenarios:
-                print(f"\n[ MENGHITUNG SKENARIO: {scen.upper()} ]")
+                print(f"\n[ Processing Scenario: {scen.upper()} ]")
                 
                 # Load Ensemble
                 w_das, s_das = [], []
                 for model in self.models:
-                    # Angin selalu pakai 1D standar
                     w_path = os.path.join(self.cf_dir, f"CF_WIND_1D_{model}_{scen}.nc")
-                    # Surya pakai string dinamis sesuai suffix
                     s_path = os.path.join(self.cf_dir, f"CF_SOLAR_1D_{model}_{scen}{sol_suffix}.nc")
                     
                     if os.path.exists(w_path) and os.path.exists(s_path):
@@ -73,16 +72,16 @@ class ComplementarityCalculator:
                             s_das.append(ds['cf_solar'].load())
                 
                 if len(w_das) != 2:
-                    print(f"   ⏩ {scen.upper()}: Data ensemble tidak lengkap (butuh 2 model). Skip.")
+                    print(f"   [SKIP] Incomplete ensemble data for {scen.upper()}.")
                     continue
                     
-                print("   -> Merakit ensemble on-the-fly...")
+                print("   -> Assembling ensemble on-the-fly...")
                 w_ens = (w_das[0] + w_das[1]) / 2.0
                 s_ens = (s_das[0] + s_das[1]) / 2.0
                 w_ens, s_ens = xr.align(w_ens, s_ens, join='inner')
 
-                # --- Kalkulasi ---
-                print("   -> Menghitung Climatology & Seasonal SRCC + CVI...")
+                # --- Calculation ---
+                print("   -> Calculating Climatological & Seasonal SRCC and CVI...")
                 srcc_clim = self.calculate_srcc(w_ens, s_ens)
                 cvi_clim = self.calculate_cvi(w_ens, s_ens)
                 
@@ -101,7 +100,6 @@ class ComplementarityCalculator:
                 da_srcc_seas.name = 'srcc'
                 da_cvi_seas.name = 'cvi'
                 
-                # Naming output dinamis (SRCC_siang_Clim_hist.nc atau SRCC_Clim_hist.nc)
                 f_srcc_clim = os.path.join(self.out_dir, f"SRCC{out_mod}_Clim_{scen}.nc")
                 f_cvi_clim = os.path.join(self.out_dir, f"CVI{out_mod}_Clim_{scen}.nc")
                 f_srcc_seas = os.path.join(self.out_dir, f"SRCC{out_mod}_Season_{scen}.nc")
@@ -112,7 +110,7 @@ class ComplementarityCalculator:
                 da_srcc_seas.to_netcdf(f_srcc_seas)
                 da_cvi_seas.to_netcdf(f_cvi_seas)
                 
-                print(f"   ✅ Sukses diletakkan di direktori 5_complementarity_analysis")
+                print("   [SAVED] Complementarity metrics successfully generated.")
                 del w_ens, s_ens, srcc_clim, cvi_clim, srcc_seas, cvi_seas, da_srcc_seas, da_cvi_seas, w_das, s_das
                 gc.collect()
 
